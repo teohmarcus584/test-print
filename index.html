@@ -19,7 +19,7 @@
             min-height: 100vh;
         }
         .card {
-            max-width: 700px;
+            max-width: 750px;
             width: 100%;
             background: white;
             border-radius: 32px;
@@ -65,15 +65,28 @@
             font-weight: 600;
             color: #1e293b;
         }
-        textarea, input {
+        textarea, input, select {
             width: 100%;
-            padding: 14px 16px;
+            padding: 12px 16px;
             border-radius: 20px;
             border: 1px solid #cbd5e1;
             font-size: 0.9rem;
             background: white;
-            margin: 12px 0;
-            resize: vertical;
+            margin: 8px 0;
+        }
+        .ip-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .ip-row input {
+            flex: 3;
+            margin: 0;
+        }
+        .ip-row button {
+            flex: 1;
+            margin: 0;
         }
         button {
             background: #3b82f6;
@@ -104,6 +117,7 @@
             font-size: 0.85rem;
             margin-top: 16px;
             font-family: monospace;
+            white-space: pre-wrap;
         }
         hr {
             margin: 24px 0;
@@ -119,6 +133,8 @@
         @media (max-width: 500px) {
             .card { padding: 16px; }
             button { width: 100%; margin-bottom: 8px; }
+            .ip-row { flex-direction: column; }
+            .ip-row input, .ip-row button { width: 100%; }
         }
     </style>
 </head>
@@ -127,13 +143,29 @@
     <h1>🖨️ Silent Printer Test</h1>
     <div class="sub">Test background printing on Android tablet → no system dialog. Works with <strong>POSBridge</strong> (HTTP) or <strong>Mobile Print Util</strong> (URL scheme).</div>
 
-    <!-- ========== METHOD 1: POSBridge (localhost:8080) ========== -->
+    <!-- ========== METHOD 1: POSBridge (HTTP) ========== -->
     <div class="method-card">
         <div class="method-title">
-            📡 POSBridge <span class="badge">HTTP POST → localhost:8080</span>
+            📡 POSBridge <span class="badge">HTTP POST → custom IP/port</span>
         </div>
         <p>Requires <strong>POSBridge app</strong> installed and running on the same tablet.<br>
         <em>Prints raw ESC/POS – best for thermal receipt printers.</em></p>
+        
+        <!-- IP address selection -->
+        <label>🔧 Bridge URL (choose one):</label>
+        <div class="ip-row">
+            <select id="bridgeUrlPreset">
+                <option value="http://localhost:8080">http://localhost:8080 (default)</option>
+                <option value="http://127.0.0.1:8080">http://127.0.0.1:8080 (loopback)</option>
+                <option value="custom">Custom IP address</option>
+            </select>
+            <input type="text" id="customIp" placeholder="e.g., 192.168.1.100:8080" style="display:none;">
+        </div>
+        <div style="margin-top: 8px;">
+            <button id="checkBridgeStatusBtn" class="warning">🔍 Check Bridge Status</button>
+            <span id="bridgeCheckResult" style="font-size:0.8rem; margin-left:8px;"></span>
+        </div>
+
         <textarea id="posbridgeText" rows="3">UL PERFUMERY TEST
 --------------------------------
 Item 1         RM 12.00
@@ -165,7 +197,7 @@ Total: RM 45.90</textarea>
 
     <hr>
 
-    <!-- ========== INSTRUCTIONS ========== -->
+    <!-- ========== INSTRUCTIONS & TROUBLESHOOTING ========== -->
     <div style="background: #eef2ff; border-radius: 20px; padding: 16px;">
         <strong>📘 How to use this test page:</strong><br>
         1️⃣ Install one of the bridge apps on your Android tablet:<br>
@@ -173,10 +205,16 @@ Total: RM 45.90</textarea>
         &nbsp;&nbsp;• <strong>Mobile Print Util</strong> – <a href="https://play.google.com/store/apps/details?id=com.samathosoft.webprint" target="_blank">Download from Play Store</a><br>
         2️⃣ Pair your Bluetooth thermal printer with the app (open app → connect printer).<br>
         3️⃣ <strong>Keep the bridge app running in the background.</strong><br>
-        4️⃣ Tap the test button above → receipt should print instantly, no dialog.<br>
+        4️⃣ For POSBridge: <strong>Use the "Check Bridge Status" button</strong>. If it fails, try entering your tablet's local IP address (find in Settings → About → IP Address).<br>
+        5️⃣ Tap the test button → receipt should print instantly, no dialog.<br>
         <br>
         ✅ <strong>Success indicator:</strong> you'll see a green status message and the physical receipt prints.<br>
-        ❌ If nothing prints, check that the bridge app is open and printer connected.
+        ❌ If nothing prints, check that the bridge app is open and printer connected.<br>
+        🔧 <strong>Troubleshooting "Failed to fetch":</strong><br>
+        &nbsp;&nbsp;• Make sure POSBridge is <strong>running in foreground</strong> (not just background).<br>
+        &nbsp;&nbsp;• Some Android versions block <code>localhost</code> – use <code>127.0.0.1</code> or your device IP.<br>
+        &nbsp;&nbsp;• Disable any VPN or ad-blocker that might interfere.<br>
+        &nbsp;&nbsp;• Try the <strong>Mobile Print Util</strong> method as a simpler alternative.
     </div>
     <div class="footer">
         Tested on Android Chrome / Edge. This page does not use window.print() – prints directly via bridge.
@@ -185,9 +223,13 @@ Total: RM 45.90</textarea>
 
 <script>
     // ========== POSBridge (HTTP POST) ==========
-    const POSBRIDGE_URL = "http://localhost:8080/print";
+    let currentBridgeUrl = "http://localhost:8080";
     const posbridgeStatusDiv = document.getElementById('posbridgeStatus');
     const posbridgeTextarea = document.getElementById('posbridgeText');
+    const bridgeUrlPreset = document.getElementById('bridgeUrlPreset');
+    const customIpInput = document.getElementById('customIp');
+    const checkBridgeBtn = document.getElementById('checkBridgeStatusBtn');
+    const bridgeCheckResultSpan = document.getElementById('bridgeCheckResult');
 
     // Helper to update status with colour
     function updateStatus(element, message, isError = false) {
@@ -196,7 +238,60 @@ Total: RM 45.90</textarea>
         element.style.color = isError ? '#b91c1c' : '#075985';
     }
 
-    // Test with plain text (will be wrapped in ESC/POS by the app)
+    // Update currentBridgeUrl based on selection
+    function updateBridgeUrl() {
+        const selected = bridgeUrlPreset.value;
+        if (selected === 'custom') {
+            let custom = customIpInput.value.trim();
+            if (!custom) custom = 'localhost:8080';
+            if (!custom.startsWith('http://')) custom = 'http://' + custom;
+            currentBridgeUrl = custom;
+        } else {
+            currentBridgeUrl = selected;
+        }
+        console.log('Using bridge URL:', currentBridgeUrl);
+        return currentBridgeUrl;
+    }
+
+    // Show/hide custom IP input
+    bridgeUrlPreset.addEventListener('change', () => {
+        if (bridgeUrlPreset.value === 'custom') {
+            customIpInput.style.display = 'block';
+        } else {
+            customIpInput.style.display = 'none';
+        }
+        updateBridgeUrl();
+    });
+    customIpInput.addEventListener('input', updateBridgeUrl);
+    updateBridgeUrl();
+
+    // Check bridge status (ping /status endpoint)
+    async function checkBridgeStatus() {
+        const baseUrl = updateBridgeUrl();
+        const statusUrl = baseUrl.replace(/\/print$/, '') + '/status';
+        bridgeCheckResultSpan.innerHTML = '⏳ Checking...';
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            const response = await fetch(statusUrl, { method: 'GET', signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (response.ok) {
+                const text = await response.text();
+                bridgeCheckResultSpan.innerHTML = '✅ Bridge reachable! Response: ' + (text.substring(0, 50) || 'OK');
+                bridgeCheckResultSpan.style.color = '#10b981';
+            } else {
+                bridgeCheckResultSpan.innerHTML = `⚠️ Bridge responded with status ${response.status}`;
+                bridgeCheckResultSpan.style.color = '#f59e0b';
+            }
+        } catch (err) {
+            console.error(err);
+            bridgeCheckResultSpan.innerHTML = `❌ Cannot reach bridge at ${statusUrl}. Make sure POSBridge app is running and the address is correct. (${err.message})`;
+            bridgeCheckResultSpan.style.color = '#ef4444';
+        }
+    }
+    checkBridgeBtn.addEventListener('click', checkBridgeStatus);
+
+    // Test with plain text
     document.getElementById('testPosBridgeBtn').addEventListener('click', async () => {
         const text = posbridgeTextarea.value.trim();
         if (!text) {
@@ -204,17 +299,19 @@ Total: RM 45.90</textarea>
             return;
         }
 
-        updateStatus(posbridgeStatusDiv, '⏳ Sending to POSBridge...');
+        const bridgeUrl = updateBridgeUrl();
+        updateStatus(posbridgeStatusDiv, `⏳ Sending to ${bridgeUrl}...`);
+
         try {
-            // POSBridge expects data as form-urlencoded with parameter "data"
-            const response = await fetch(POSBRIDGE_URL, {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            const response = await fetch(bridgeUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                    data: text,
-                    copies: '1'
-                })
+                body: new URLSearchParams({ data: text, copies: '1' }),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             if (response.ok) {
                 updateStatus(posbridgeStatusDiv, '✅ Print job sent! Receipt should print now.');
@@ -224,47 +321,46 @@ Total: RM 45.90</textarea>
             }
         } catch (err) {
             console.error(err);
-            updateStatus(posbridgeStatusDiv, `❌ Cannot connect to POSBridge. Is the app running? (${err.message})`, true);
+            let errorMsg = `❌ Cannot connect to POSBridge at ${bridgeUrl}. `;
+            if (err.name === 'AbortError') errorMsg += 'Request timed out. ';
+            errorMsg += `Is the app running? (${err.message})`;
+            updateStatus(posbridgeStatusDiv, errorMsg, true);
         }
     });
 
-    // Demo raw ESC/POS – a minimal example (cut + text + line feed)
+    // Demo raw ESC/POS
     document.getElementById('testPosBridgeRawBtn').addEventListener('click', async () => {
-        // Simple ESC/POS commands: init, center, text, cut
-        // For demo we send raw bytes as a string – POSBridge must accept raw binary.
-        // Many bridge apps accept raw ESC/POS in the "data" field if you set raw=true.
-        // We'll use the same endpoint but with a raw flag (if supported). 
-        // If your bridge doesn't support raw, fallback to plain text.
         const rawCommands = [
             0x1B, 0x40,           // init
             0x1B, 0x61, 0x01,     // center align
-            0x55, 0x4C, 0x20, 0x50, 0x45, 0x52, 0x46, 0x55, 0x4D, 0x45, 0x52, 0x59, 0x0A, // "UL PERFUMERY" + newline
-            0x1B, 0x61, 0x00,     // left align
-            0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x0A, // "------------"
-            0x52, 0x61, 0x77, 0x20, 0x74, 0x65, 0x73, 0x74, 0x20, 0x6F, 0x6B, 0x0A,        // "Raw test ok"
+            0x55, 0x4C, 0x20, 0x50, 0x45, 0x52, 0x46, 0x55, 0x4D, 0x45, 0x52, 0x59, 0x0A,
+            0x1B, 0x61, 0x00,
+            0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x2D, 0x0A,
+            0x52, 0x61, 0x77, 0x20, 0x74, 0x65, 0x73, 0x74, 0x20, 0x6F, 0x6B, 0x0A,
             0x0A,
-            0x1D, 0x56, 0x41, 0x00  // cut
+            0x1D, 0x56, 0x41, 0x00
         ];
         const uint8Array = new Uint8Array(rawCommands);
-        // Convert to binary string (latin1) for POST body
         let binaryString = '';
         uint8Array.forEach(byte => { binaryString += String.fromCharCode(byte); });
 
-        updateStatus(posbridgeStatusDiv, '⏳ Sending raw ESC/POS...');
+        const bridgeUrl = updateBridgeUrl();
+        updateStatus(posbridgeStatusDiv, `⏳ Sending raw ESC/POS to ${bridgeUrl}...`);
+
         try {
-            const response = await fetch(POSBRIDGE_URL, {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            const response = await fetch(bridgeUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                    data: binaryString,
-                    raw: 'true',      // some bridges accept raw flag
-                    copies: '1'
-                })
+                body: new URLSearchParams({ data: binaryString, raw: 'true', copies: '1' }),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
             if (response.ok) {
-                updateStatus(posbridgeStatusDiv, '✅ Raw ESC/POS sent. Should cut and print.');
+                updateStatus(posbridgeStatusDiv, '✅ Raw ESC/POS sent.');
             } else {
-                updateStatus(posbridgeStatusDiv, `⚠️ Raw not supported by bridge. Try plain text button.`, true);
+                updateStatus(posbridgeStatusDiv, `⚠️ Raw not supported by bridge. Try plain text.`, true);
             }
         } catch (err) {
             updateStatus(posbridgeStatusDiv, `❌ Raw send failed: ${err.message}`, true);
@@ -281,27 +377,21 @@ Total: RM 45.90</textarea>
             updateStatus(mpuStatusDiv, '❌ Please enter text to print.', true);
             return;
         }
-        // Encode the text for URL
         const encoded = encodeURIComponent(text);
-        // Mobile Print Util scheme: com.samathosoft.webprint://print?text=...
-        // According to documentation: com.samathosoft.webprint://print?text=YOUR_TEXT&copies=1
         const url = `com.samathosoft.webprint://print?text=${encoded}&copies=1`;
         
         updateStatus(mpuStatusDiv, '⏳ Attempting to open Mobile Print Util...');
         
-        // Create an invisible iframe to trigger the scheme (prevents page navigation)
         const iframe = document.createElement('iframe');
         iframe.style.display = 'none';
         iframe.src = url;
         document.body.appendChild(iframe);
         
-        // Remove after 2 seconds
         setTimeout(() => {
             iframe.remove();
             updateStatus(mpuStatusDiv, '✅ Print request sent. Check your printer (app must be installed).');
         }, 500);
         
-        // Fallback if app not installed – show alert after timeout
         setTimeout(() => {
             if (document.body.contains(iframe)) {
                 updateStatus(mpuStatusDiv, '⚠️ No response from Mobile Print Util. Is the app installed?', true);
@@ -309,19 +399,8 @@ Total: RM 45.90</textarea>
         }, 1500);
     });
 
-    // Small helper: check if POSBridge is reachable on page load (optional)
-    async function checkBridgeHealth() {
-        try {
-            const res = await fetch('http://localhost:8080/status', { method: 'GET', mode: 'no-cors' });
-            // no-cors makes response opaque, but we can detect if fetch succeeded without error
-            if (res.type === 'opaque') {
-                console.log('Bridge reachable (no-cors)');
-            }
-        } catch (e) {
-            console.log('Bridge not detected');
-        }
-    }
-    checkBridgeHealth();
+    // Auto-check status on page load (optional)
+    setTimeout(checkBridgeStatus, 1000);
 </script>
 </body>
 </html>
