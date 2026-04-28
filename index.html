@@ -141,7 +141,7 @@
 <body>
 <div class="card">
     <h1>🖨️ Silent Printer Test</h1>
-    <div class="sub">Test background printing on Android tablet → no system dialog. Works with <strong>POSBridge</strong> (HTTP) or <strong>Mobile Print Util</strong> (URL scheme).</div>
+    <div class="sub">Test background printing on Android tablet → no system dialog. Works with <strong>POSBridge</strong> (HTTP), <strong>RawBT</strong> (URI scheme) and <strong>Mobile Print Util</strong> (URI scheme).</div>
 
     <!-- ========== METHOD 1: POSBridge (HTTP) ========== -->
     <div class="method-card">
@@ -151,7 +151,6 @@
         <p>Requires <strong>POSBridge app</strong> installed and running on the same tablet.<br>
         <em>Prints raw ESC/POS – best for thermal receipt printers.</em></p>
         
-        <!-- IP address selection -->
         <label>🔧 Bridge URL (choose one):</label>
         <div class="ip-row">
             <select id="bridgeUrlPreset">
@@ -180,7 +179,25 @@ THANK YOU!</textarea>
         <div id="posbridgeStatus" class="status">⚪ Not tested yet</div>
     </div>
 
-    <!-- ========== METHOD 2: Mobile Print Util (URL scheme) ========== -->
+    <!-- ========== METHOD 2: RawBT (URI scheme) ========== -->
+    <div class="method-card">
+        <div class="method-title">
+            📱 RawBT <span class="badge">URI scheme: rawbt: + encoded text</span>
+        </div>
+        <p>Requires <strong>RawBT inkless print service</strong> installed from Play Store.<br>
+        Trigger print by opening a link like <code>rawbt:Hello%2C%20World!</code> silently via an iframe.</p>
+        <textarea id="rawbtText" rows="3">UL PERFUMERY TEST
+--------------------------------
+Item 1         RM 12.00
+Item 2         RM 23.50
+--------------------------------
+TOTAL          RM 35.50
+THANK YOU!</textarea>
+        <button id="testRawbtBtn" class="success">🖨️ Print with RawBT</button>
+        <div id="rawbtStatus" class="status">⚪ Not tested yet</div>
+    </div>
+
+    <!-- ========== METHOD 3: Mobile Print Util (URL scheme) ========== -->
     <div class="method-card">
         <div class="method-title">
             📱 Mobile Print Util <span class="badge">custom URL scheme</span>
@@ -201,20 +218,17 @@ Total: RM 45.90</textarea>
     <div style="background: #eef2ff; border-radius: 20px; padding: 16px;">
         <strong>📘 How to use this test page:</strong><br>
         1️⃣ Install one of the bridge apps on your Android tablet:<br>
-        &nbsp;&nbsp;• <strong>POSBridge</strong> – <a href="https://play.google.com/store/apps/details?id=com.posbridge.app" target="_blank">Search Google Play for "POSBridge"</a> (or build from open source)<br>
+        &nbsp;&nbsp;• <strong>POSBridge</strong> – Search Google Play for "POSBridge"<br>
+        &nbsp;&nbsp;• <strong>RawBT</strong> – <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank">Download from Play Store</a> (most reliable for Bluetooth)<br>
         &nbsp;&nbsp;• <strong>Mobile Print Util</strong> – <a href="https://play.google.com/store/apps/details?id=com.samathosoft.webprint" target="_blank">Download from Play Store</a><br>
         2️⃣ Pair your Bluetooth thermal printer with the app (open app → connect printer).<br>
         3️⃣ <strong>Keep the bridge app running in the background.</strong><br>
-        4️⃣ For POSBridge: <strong>Use the "Check Bridge Status" button</strong>. If it fails, try entering your tablet's local IP address (find in Settings → About → IP Address).<br>
-        5️⃣ Tap the test button → receipt should print instantly, no dialog.<br>
+        4️⃣ For POSBridge: Use the <strong>"Check Bridge Status"</strong> button. If it fails, try entering your tablet's local IP address.<br>
+        5️⃣ Tap any test button → receipt should print instantly, no dialog.<br>
         <br>
         ✅ <strong>Success indicator:</strong> you'll see a green status message and the physical receipt prints.<br>
-        ❌ If nothing prints, check that the bridge app is open and printer connected.<br>
-        🔧 <strong>Troubleshooting "Failed to fetch":</strong><br>
-        &nbsp;&nbsp;• Make sure POSBridge is <strong>running in foreground</strong> (not just background).<br>
-        &nbsp;&nbsp;• Some Android versions block <code>localhost</code> – use <code>127.0.0.1</code> or your device IP.<br>
-        &nbsp;&nbsp;• Disable any VPN or ad-blocker that might interfere.<br>
-        &nbsp;&nbsp;• Try the <strong>Mobile Print Util</strong> method as a simpler alternative.
+        ❌ If nothing prints, check that the app is open and printer connected.<br>
+        🔧 <strong>RawBT tip:</strong> The app works as a standard Android print service, so any app that supports "Share" or "Open with" can send text to RawBT. This test uses the <code>rawbt:</code> URI scheme to send the receipt directly.
     </div>
     <div class="footer">
         Tested on Android Chrome / Edge. This page does not use window.print() – prints directly via bridge.
@@ -367,6 +381,42 @@ Total: RM 45.90</textarea>
         }
     });
 
+    // ========== RawBT (URI scheme) ==========
+    const rawbtStatusDiv = document.getElementById('rawbtStatus');
+    const rawbtTextarea = document.getElementById('rawbtText');
+
+    document.getElementById('testRawbtBtn').addEventListener('click', () => {
+        const text = rawbtTextarea.value.trim();
+        if (!text) {
+            updateStatus(rawbtStatusDiv, '❌ Please enter some text to print.', true);
+            return;
+        }
+
+        // URL-encode the text
+        const encoded = encodeURIComponent(text);
+        // RawBT URI scheme: rawbt: followed by the encoded text
+        const url = `rawbt:${encoded}`;
+
+        updateStatus(rawbtStatusDiv, '⏳ Attempting to send to RawBT...');
+
+        // Create an invisible iframe to trigger the URI scheme – stays on the page
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+
+        setTimeout(() => {
+            iframe.remove();
+            updateStatus(rawbtStatusDiv, '✅ Print request sent to RawBT. Check your printer (app must be installed and configured).');
+        }, 500);
+
+        setTimeout(() => {
+            if (document.body.contains(iframe)) {
+                updateStatus(rawbtStatusDiv, '⚠️ No response from RawBT. Is the app installed?', true);
+            }
+        }, 1500);
+    });
+
     // ========== Mobile Print Util (custom URL scheme) ==========
     const mpuStatusDiv = document.getElementById('mpuStatus');
     const mpuTextarea = document.getElementById('mpuText');
@@ -379,19 +429,19 @@ Total: RM 45.90</textarea>
         }
         const encoded = encodeURIComponent(text);
         const url = `com.samathosoft.webprint://print?text=${encoded}&copies=1`;
-        
+
         updateStatus(mpuStatusDiv, '⏳ Attempting to open Mobile Print Util...');
-        
+
         const iframe = document.createElement('iframe');
         iframe.style.display = 'none';
         iframe.src = url;
         document.body.appendChild(iframe);
-        
+
         setTimeout(() => {
             iframe.remove();
             updateStatus(mpuStatusDiv, '✅ Print request sent. Check your printer (app must be installed).');
         }, 500);
-        
+
         setTimeout(() => {
             if (document.body.contains(iframe)) {
                 updateStatus(mpuStatusDiv, '⚠️ No response from Mobile Print Util. Is the app installed?', true);
@@ -399,7 +449,7 @@ Total: RM 45.90</textarea>
         }, 1500);
     });
 
-    // Auto-check status on page load (optional)
+    // Auto-check POSBridge status on page load (optional)
     setTimeout(checkBridgeStatus, 1000);
 </script>
 </body>
